@@ -151,6 +151,13 @@
       padding: 40px 0 20px;
       font-size: 0.95rem;
     }
+
+    .loading {
+      text-align: center;
+      color: #a0aec0;
+      padding: 40px 0 20px;
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>
@@ -168,14 +175,77 @@
     </div>
 
     <ul id="list"></ul>
-    <div class="empty" id="empty">아직 아이템이 없습니다.</div>
+    <div class="empty" id="empty" style="display:none">아직 아이템이 없습니다.</div>
+    <div class="loading" id="loading">불러오는 중...</div>
   </div>
 
   <script>
-    let items = JSON.parse(localStorage.getItem('shoppingList') || '[]');
+    const SUPABASE_URL = 'https://fsuqafztfhvuxayozkrh.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdXFhZnp0Zmh2dXhheW96a3JoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MDk2MjcsImV4cCI6MjA4ODI4NTYyN30.MPr08xxYl0GPq4Vt677A0uvi8Z7rq_eQq_QvuVr6rdw';
 
-    function save() {
-      localStorage.setItem('shoppingList', JSON.stringify(items));
+    const headers = {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Prefer': 'return=representation'
+    };
+
+    let items = [];
+
+    async function fetchItems() {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/shopping_items?order=created_at.asc`, { headers });
+      items = await res.json();
+      document.getElementById('loading').style.display = 'none';
+      render();
+    }
+
+    async function addItem() {
+      const input = document.getElementById('itemInput');
+      const text = input.value.trim();
+      if (!text) { input.focus(); return; }
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/shopping_items`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text, checked: false })
+      });
+      const [newItem] = await res.json();
+      items.push(newItem);
+      render();
+      input.value = '';
+      input.focus();
+    }
+
+    async function toggle(id, checked) {
+      await fetch(`${SUPABASE_URL}/rest/v1/shopping_items?id=eq.${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ checked })
+      });
+      const item = items.find(x => x.id === id);
+      if (item) item.checked = checked;
+      render();
+    }
+
+    async function remove(id) {
+      await fetch(`${SUPABASE_URL}/rest/v1/shopping_items?id=eq.${id}`, {
+        method: 'DELETE',
+        headers
+      });
+      items = items.filter(x => x.id !== id);
+      render();
+    }
+
+    async function clearChecked() {
+      const checkedIds = items.filter(x => x.checked).map(x => x.id);
+      if (checkedIds.length === 0) return;
+
+      await fetch(`${SUPABASE_URL}/rest/v1/shopping_items?id=in.(${checkedIds.join(',')})`, {
+        method: 'DELETE',
+        headers
+      });
+      items = items.filter(x => !x.checked);
+      render();
     }
 
     function render() {
@@ -188,14 +258,14 @@
         empty.style.display = 'block';
       } else {
         empty.style.display = 'none';
-        items.forEach((item, i) => {
+        items.forEach(item => {
           const li = document.createElement('li');
           if (item.checked) li.classList.add('checked');
 
           li.innerHTML = `
-            <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggle(${i})" />
+            <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggle('${item.id}', this.checked)" />
             <span class="item-text">${escHtml(item.text)}</span>
-            <button class="delete-btn" onclick="remove(${i})" title="삭제">&times;</button>
+            <button class="delete-btn" onclick="remove('${item.id}')" title="삭제">&times;</button>
           `;
           list.appendChild(li);
         });
@@ -210,40 +280,11 @@
       return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    function addItem() {
-      const input = document.getElementById('itemInput');
-      const text = input.value.trim();
-      if (!text) { input.focus(); return; }
-      items.push({ text, checked: false });
-      save();
-      render();
-      input.value = '';
-      input.focus();
-    }
-
-    function toggle(i) {
-      items[i].checked = !items[i].checked;
-      save();
-      render();
-    }
-
-    function remove(i) {
-      items.splice(i, 1);
-      save();
-      render();
-    }
-
-    function clearChecked() {
-      items = items.filter(x => !x.checked);
-      save();
-      render();
-    }
-
     document.getElementById('itemInput').addEventListener('keydown', e => {
       if (e.key === 'Enter') addItem();
     });
 
-    render();
+    fetchItems();
   </script>
 </body>
 </html>
